@@ -3,6 +3,13 @@
 
 #include "command_queue.h"
 
+enum CommandProcessorState {
+  HANDSHAKE,
+  ACTIVE,
+};
+
+extern enum CommandProcessorState processor_state;
+
 void InitUartCommandProcessor(CommandQueue* queue);
 int CommandProcessorPoll();
 int ReceiveData();

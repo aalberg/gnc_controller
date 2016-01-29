@@ -16,24 +16,19 @@
 
 static CommandQueue* command_queue_ptr;
 enum ControllerDriverState controller_driver_state = WAITING;
-enum ControllerLineBitPart controller_line_bit_part = NONE;
+static int edges_since_send = 0;
+static int short_command_num = 0;
+static int bytes_to_send = 0;
 
 static ControllerState state_to_transimit;
+static uint8_t calibration_data[10] = {0x00, 0x80, 0x80, 0x80, 0x80, 0x80, 0x00, 0x00, 0x02, 0x02};
 static uint8_t* state_ptr = (uint8_t*)&state_to_transimit;
 
-static unsigned int timer_us_1 = 0;
-//static unsigned int timer_us_2 = 0;
-static unsigned int timer_us_3 = 0;
-static unsigned int timer_us_4 = 0;
-//static unsigned int timer_us_8 = 0;
+static unsigned int timer_bit = 0;
 
 void InitControllerDriver(CommandQueue* queue_ptr) {
-  // Precalculate timer counts for 1-4,8us.
-  timer_us_1 = 1;//mcg_clk_hz / 1000000;
-  //timer_us_2 = mcg_clk_hz * 2 / 1000000;
-  timer_us_3 = 80;//mcg_clk_hz * 3 / 1000000;
-  timer_us_4 = mcg_clk_hz * 4 / 1000000;
-  //timer_us_8 = mcg_clk_hz * 8 / 1000000;
+  // Precalculate timer counts for end of command word detection.
+  timer_bit = mcg_clk_hz * 3 / 1250000;
   
   // Init state.
   command_queue_ptr = queue_ptr;
@@ -46,16 +41,16 @@ void InitControllerDriver(CommandQueue* queue_ptr) {
   PORTC_PCR6 |= PORT_PCR_MUX(0x1);
   PORTC_PCR6 |= PORT_PCR_IRQC(0xA);
   enable_irq(IRQ(INT_PORTC));
-  //NVIC_ENABLE_IRQ(INT_PORTC);
   PORTC_ISFR = 1 << 6;
   
   // Enable PIT
   PIT_MCR = 0x00;
-  PIT_TCTRL2 = PIT_TCTRL_TIE_MASK;  // Enable Timer 2 interrupts.
+  // Enable Timer 2 interrupts.
+  PIT_TCTRL2 = PIT_TCTRL_TIE_MASK;
   enable_irq(IRQ(INT_PIT2));
   
-  const char startup_msg[] = "\x98\x76\x54";//"Controller Driver Initialized\n";
-  UARTWrite(startup_msg, strlen(startup_msg));
+  //const char startup_msg[] = "\x98\x76\x54";//"Controller Driver Initialized\n";
+  //UARTWrite(startup_msg, strlen(startup_msg));
 }
 
 void EnableControllerDriver() {
@@ -79,7 +74,7 @@ void StartControllerCommandSend() {
   }
   controller_driver_state = RECEIVE_CODEWORD;
   PIT_TCTRL2 = 0;
-  PIT_LDVAL2 = timer_us_4;
+  PIT_LDVAL2 = timer_bit;
   PIT_TCTRL2 = 3;
 }
 
@@ -93,58 +88,63 @@ void PIT2_IRQHandler() {
   // Disable timer 2.
   PIT_TCTRL2 &= ~PIT_TCTRL_TEN_MASK;
 
-  if (controller_driver_state == WAITING) {
-    // This shoudn't happen, go back to waiting for the PORTC interrupt.
-    GPIOC_PDDR &= ~(1 << 6);
-    PORTC_PCR6 = (PORTC_PCR6 & ~PORT_PCR_IRQC(0xF)) | PORT_PCR_IRQC(0xA);
-    PIT_TFLG2 |= PIT_TFLG_TIF_MASK;
-    return;
-  } else if (controller_driver_state == RECEIVE_CODEWORD) {
+  // Small optimization to check this first.
+  if (controller_driver_state == RECEIVE_CODEWORD) {
     // Prepare to start sending.
-    controller_driver_state = SENDING;
     byte_index = 0;
     bit_index = 0;
-    controller_line_bit_part = FIRST;
     
-    // If no state to send, send empty state.
-    if (Pop(command_queue_ptr, &state_to_transimit)) {
-      memcpy(&state_to_transimit, &empty_state, sizeof(ControllerState));
+    // Messy way to keep track of what we're supposed to be sending back since
+    // we don't actually read what the wii sends us.
+    if (edges_since_send < 16) {
+      // Request controller ID.
+      if (short_command_num == 0) {
+        state_ptr = (uint8_t*)&state_to_transimit;
+        state_ptr[0] = 0x09;
+        state_ptr[1] = 0x00;
+        state_ptr[2] = 0x00;
+        bytes_to_send = 3;
+        short_command_num = 1;
+      // Get calibration data.
+      } else {
+        state_ptr = calibration_data;
+        bytes_to_send = 10;
+        short_command_num = 0;
+      }
+    // Poll controller status.
+    } else {
+      // If no state to send, send empty state.
+      state_ptr = (uint8_t*)&state_to_transimit;
+      if (Pop(command_queue_ptr, &state_to_transimit) == -1) {
+        memcpy(&state_to_transimit, &empty_state, sizeof(ControllerState));
+      }
+      bytes_to_send = 8;
     }
     
-    // Load a 0 on pin C6
+    // Load a 0 on pin C6.
     GPIOC_PDOR &= ~(1 << 6);
-    // 1us delay before starting to send the command.
-    PIT_LDVAL2 = timer_us_1;
-    //bit_value = 0;
-  } else if (controller_driver_state == SENDING) {
+    
+    // Start sending immediately.
     while (1) {
-    //if (controller_line_bit_part == FIRST) {
       // Get value of bit being sent.
-      if (byte_index == 9) {
+      if (byte_index == bytes_to_send) {
         bit_value = 1;
       } else {
         bit_value = (*(state_ptr + byte_index)) & (1 << (7 - bit_index));
       }
       
-      // Set line value;
-      controller_line_bit_part = SECOND;
+      // Set line value.
       GPIOC_PDDR |= (1 << 6);
       if (bit_value) {
-        //PIT_LDVAL2 = timer_us_1;
         NOP1U1();
       } else {
-        //PIT_LDVAL2 = timer_us_3;
         NOP3U0();
       }
-    //} else if (controller_line_bit_part == SECOND) {
-      // Set line value;
-      controller_line_bit_part = FIRST;
+
       GPIOC_PDDR &= ~(1 << 6);
       if (bit_value) {
-        //PIT_LDVAL2 = timer_us_3;
         NOP3U1();
       } else {
-        //PIT_LDVAL2 = timer_us_1;
         NOP1U0();
       }
       
@@ -156,15 +156,21 @@ void PIT2_IRQHandler() {
       }
       
       // Check if done sending.
-      if (byte_index == 8 && bit_index == 1) {
+      if (byte_index == bytes_to_send && bit_index == 1) {
         controller_driver_state = WAITING;
         GPIOC_PDDR &= ~(1 << 6);
         PORTC_PCR6 = (PORTC_PCR6 & ~PORT_PCR_IRQC(0xF)) | PORT_PCR_IRQC(0xA);
         PIT_TFLG2 |= PIT_TFLG_TIF_MASK;
+        edges_since_send = 0;
         return;
       }
-    //}
     }
+  } else if (controller_driver_state == WAITING || controller_driver_state == DISABLED) {
+    // Go back to waiting for the PORTC interrupt.
+    GPIOC_PDDR &= ~(1 << 6);
+    PORTC_PCR6 = (PORTC_PCR6 & ~PORT_PCR_IRQC(0xF)) | PORT_PCR_IRQC(0xA);
+    PIT_TFLG2 |= PIT_TFLG_TIF_MASK;
+    return;
   }
   
   // Clear the interrupt flag.
@@ -185,12 +191,13 @@ void PORTC_IRQHandler() {
     return;
   }
   
+  edges_since_send ++;
   LedToggle(1);
   LedOn(2);
   controller_driver_state = RECEIVE_CODEWORD;
   // Keep reseting the timer until the codeword is done.
   PIT_TCTRL2 &= ~PIT_TCTRL_TEN_MASK;  // Disable timer 2.
-  PIT_LDVAL2 = timer_us_4;  // Setup timer 2 for 8us.
+  PIT_LDVAL2 = timer_bit;  // Setup timer 2 ~1 bit length.
   PIT_TCTRL2 |= PIT_TCTRL_TEN_MASK;  // Start Timer 2.
   
   // Clear interrupt flag.

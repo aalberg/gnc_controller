@@ -6,6 +6,7 @@
 #include "command_queue.h"
 #include "controller_driver.h"
 #include "led.h"
+#include "uart.h"
 #include "uart_command_processor.h"
 
 // Initialize everything that needs to be set up.
@@ -17,7 +18,7 @@ void Init(void) {
   // Turn on PIT.
   PIT_MCR = 0x00;
   // Timer 1
-  PIT_LDVAL1 = mcg_clk_hz / 60;//>> 2; // setup timer 1 for 4Hz.
+  PIT_LDVAL1 = mcg_clk_hz /* 60;*/>> 2; // setup timer 1 for 4Hz.
   PIT_TCTRL1 = PIT_TCTRL_TIE_MASK; // enable Timer 1 interrupts
   PIT_TCTRL1 |= PIT_TCTRL_TEN_MASK; // start Timer 1
 
@@ -33,8 +34,13 @@ int main(void) {
   InitCommandQueue(&queue);
   InitUartCommandProcessor(&queue);
   InitControllerDriver(&queue);
+  //char c;
   
   while(1) {
+    /*if (UARTAvail() != 0) {
+      UARTRead(&c, 1);
+      UARTWrite(&c, 1);
+    }*/
     CommandProcessorPoll();
     /*if (controller_driver_state == WAITING) {
       LedOn(3);
@@ -58,7 +64,7 @@ int main(void) {
 // Blink the onboard LED to indicate the teensy is running.
 void PIT1_IRQHandler() {
   LedToggle(0);
-  StartControllerCommandSend();
+  //StartControllerCommandSend();
   
   // Reset the interrupt flag.
   PIT_TFLG1 |= PIT_TFLG_TIF_MASK;

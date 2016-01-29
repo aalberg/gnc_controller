@@ -102,7 +102,10 @@ void UARTInit(uint32_t  uartnum, int32_t baud) {
               | UART_C2_RE_MASK
               | UART_C2_RIE_MASK
               );
-
+              
+  // Enable transmit and recieve fifo.
+  UART_PFIFO_REG(uartbase) = UART_PFIFO_TXFE_MASK | UART_PFIFO_RXFE_MASK;
+  
   // Make the connection to the external pins, based on the base pointer.
   if (uartbase == UART0_BASE_PTR) {
     PORTB_PCR17 = PORT_PCR_MUX(0x3);  // UART0 TXD is alt3 function on PB17
@@ -215,6 +218,10 @@ int32_t UARTRead(char *ptr, int32_t len) {
   return  chars;
 }
 
+void UARTFlushRead() {
+  UART_CFIFO_REG(ActiveUARTBasePtr) |= UART_CFIFO_RXFLUSH_MASK;
+}
+
 uint16_t ByteToHex(uint8_t byte) {
   return ((((byte & 0xF0) >> 8) + '0') << 8) & ((byte & 0x0F) + '0');
 }
@@ -252,7 +259,7 @@ static UART_MemMapPtr XlateUARTNumToBasePtr(uint32_t uartn) {
  *  Returns 1 if able to write char to UART, else returns 0.
  */
 static uint32_t uart_putchar(char ch) {
-  if (ActiveUARTBasePtr == 0)  return 0;  // if no active UART, show no chars sent
+  if (ActiveUARTBasePtr == 0) return 0;  // if no active UART, show no chars sent
 
   while (!(UART_S1_REG(ActiveUARTBasePtr) & UART_S1_TDRE_MASK));  // lock until ready
   UART_D_REG(ActiveUARTBasePtr) = (uint8_t)ch;  // write char to UART

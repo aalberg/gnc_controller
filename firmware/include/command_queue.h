@@ -3,6 +3,19 @@
 
 #define QUEUE_SIZE 64
 
+#define EMPTY_STATE { \
+  0x00, \
+  0x80, \
+  0x80, \
+  0x7F, \
+  0x80, \
+  0x7F, \
+  0x00, \
+  0x00, \
+}
+
+#include "arm_cm4.h"
+
 typedef struct {
   unsigned char byte0;
   unsigned char byte1;
@@ -21,6 +34,8 @@ typedef struct {
   int end_index;
   int size;
   ControllerState arr[QUEUE_SIZE];
+  uint8 pop_removes_items;
+  uint8 pop_parity;
 } CommandQueue;
 
 void InitCommandQueue(CommandQueue* queue);
@@ -29,6 +44,7 @@ int IsFull(CommandQueue* queue);
 int Pop(CommandQueue* queue, ControllerState* state);
 int Push(CommandQueue* queue, ControllerState* state);
 int OverwriteState(CommandQueue* queue, ControllerState* state, int index);
-void ClearQueue(CommandQueue* queue);
+int DeleteAfter(CommandQueue* queue, int index);
+int ClearQueue(CommandQueue* queue);
 
 #endif  // COMMAND_QUEUE_H_

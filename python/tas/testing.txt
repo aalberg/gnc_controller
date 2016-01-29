@@ -1,0 +1,13 @@
+# Reset to edge
+#dash l;fh l;nop16;nop16;nop16
+roll l;nop16;nop8;nop6
+#;roll l;nop16;nop8;nop6
+
+# Edge canceled nair to the right
+dash r;dash r;dash r;dash r;dash r;dash r;dash r;dash r
+sh;nop2;00 a;nop8;drop
+
+# Fall off
+nop3;dash r
+
+# Bair and l cancel

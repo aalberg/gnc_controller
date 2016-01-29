@@ -29,6 +29,7 @@ uint32_t UARTAssignActiveUART(uint32_t uartnum);
 int32_t UARTWrite(const char *ptr, int32_t len);
 int32_t UARTAvail(void);
 int32_t UARTRead(char *ptr, int32_t len);
+void UARTFlushRead();
 uint16_t ByteToHex(uint8_t byte);
 
 #endif  // __UART_H__

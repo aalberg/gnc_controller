@@ -7,13 +7,6 @@ enum ControllerDriverState {
   DISABLED,
   WAITING,
   RECEIVE_CODEWORD,
-  SENDING,
-};
-
-enum ControllerLineBitPart {
-  NONE,
-  FIRST,
-  SECOND,
 };
 
 extern enum ControllerDriverState controller_driver_state;
