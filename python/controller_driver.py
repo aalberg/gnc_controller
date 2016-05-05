@@ -25,7 +25,7 @@ class ControllerDriver:
           parity=serial.PARITY_NONE,
           stopbits=serial.STOPBITS_ONE,
           bytesize=serial.EIGHTBITS,
-          timeout=1
+          timeout=None
         )
         self.SendCommand(ControllerCommand(cmd_type = 0xF, cmd_param = 0))
         self.SendCommand(ControllerCommand(cmd_type = 0xE, cmd_param = 0))

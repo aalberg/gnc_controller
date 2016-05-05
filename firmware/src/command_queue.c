@@ -1,6 +1,7 @@
 #include <string.h>
 
 #include "command_queue.h"
+#include "led.h"
 
 /*const ControllerState empty_state = {
   0xA5,
@@ -17,7 +18,7 @@ const ControllerState empty_state = EMPTY_STATE;
 void InitCommandQueue(CommandQueue* queue) {
   memset(queue, 0, sizeof(CommandQueue));
   queue->pop_removes_items = 1;
-  queue->pop_parity = 0;
+  queue->pop_required = 0;
 }
 
 int IsEmpty(CommandQueue* queue) {
@@ -34,10 +35,9 @@ int Pop(CommandQueue* queue, ControllerState* state) {
   }
   memcpy(state, &(queue->arr[queue->start_index]), sizeof(ControllerState));
   if (queue->pop_removes_items) {
-    if (queue->pop_parity == 0) {
-      queue->pop_parity = 1;
-    } else {
-      queue->pop_parity = 0;
+    if (queue->pop_required == 1) {
+      LedToggle(3);
+      queue->pop_required = 0;
       queue->start_index = (queue->start_index + 1) % QUEUE_SIZE;
       queue->size --;
     }
@@ -76,6 +76,6 @@ int ClearQueue(CommandQueue* queue) {
   queue->start_index = 0;
   queue->end_index = 0;
   queue->size = 0;
-  queue->pop_parity = 0;
+  queue->pop_required = 0;
   return 0;
 }

@@ -4,7 +4,7 @@ import seq_decode
 import cmd_generator
 
 def main():
-  driver = controller_driver.ControllerDriver("COM3", True)
+  driver = controller_driver.ControllerDriver("COM6", True)
   decoder = seq_decode.CommandSequenceDecoder()
   driver.Append(decoder.DecodeSequence(["20", "multishine", "multishine", \
                                     "multishine", "multishine", "multishine"]))
@@ -28,7 +28,7 @@ def main():
       run = True
     elif input[0:4] == "loop":
       generator = cmd_generator.CommandGenerator(filename = input[5:], \
-                                                 decoder = decoder, loop = False)
+                                                 decoder = decoder, loop = True)
     elif input == "start":
       driver.StartPeriodicSend(generator)
     elif input == "s":

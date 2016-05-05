@@ -19,16 +19,19 @@ enum ControllerDriverState controller_driver_state = WAITING;
 static int edges_since_send = 0;
 static int short_command_num = 0;
 static int bytes_to_send = 0;
+static int timer_flag = 1;
 
 static ControllerState state_to_transimit;
 static uint8_t calibration_data[10] = {0x00, 0x80, 0x80, 0x80, 0x80, 0x80, 0x00, 0x00, 0x02, 0x02};
 static uint8_t* state_ptr = (uint8_t*)&state_to_transimit;
 
 static unsigned int timer_bit = 0;
+static unsigned int cs_holdout = 0;
 
 void InitControllerDriver(CommandQueue* queue_ptr) {
   // Precalculate timer counts for end of command word detection.
-  timer_bit = mcg_clk_hz * 3 / 1250000;
+  timer_bit = (mcg_clk_hz * 3) / 1250000;
+  cs_holdout = mcg_clk_hz / 250;
   
   // Init state.
   command_queue_ptr = queue_ptr;
@@ -43,11 +46,22 @@ void InitControllerDriver(CommandQueue* queue_ptr) {
   enable_irq(IRQ(INT_PORTC));
   PORTC_ISFR = 1 << 6;
   
+  // Set pin D3 to input and enable the port D falling edge interrupt on pin D3.
+  GPIOD_PDDR &= ~(1 << 3);
+  PORTD_PCR3 = 0;
+  PORTD_PCR3 |= PORT_PCR_MUX(0x1);
+  PORTD_PCR3 |= PORT_PCR_IRQC(0xA);
+  enable_irq(IRQ(INT_PORTD));
+  PORTD_ISFR = 1 << 3;
+  
   // Enable PIT
   PIT_MCR = 0x00;
   // Enable Timer 2 interrupts.
   PIT_TCTRL2 = PIT_TCTRL_TIE_MASK;
   enable_irq(IRQ(INT_PIT2));
+  // Enable Timer 3 interrupts.
+  PIT_TCTRL3 = PIT_TCTRL_TIE_MASK;
+  enable_irq(IRQ(INT_PIT3));
   
   //const char startup_msg[] = "\x98\x76\x54";//"Controller Driver Initialized\n";
   //UARTWrite(startup_msg, strlen(startup_msg));
@@ -117,6 +131,8 @@ void PIT2_IRQHandler() {
       state_ptr = (uint8_t*)&state_to_transimit;
       if (Pop(command_queue_ptr, &state_to_transimit) == -1) {
         memcpy(&state_to_transimit, &empty_state, sizeof(ControllerState));
+      } else {
+        
       }
       bytes_to_send = 8;
     }
@@ -186,10 +202,17 @@ void PIT2_IRQHandler() {
   PIT_TFLG2 |= PIT_TFLG_TIF_MASK;
 }*/
 
+void PIT3_IRQHandler() {
+  PIT_TCTRL3 &= ~PIT_TCTRL_TEN_MASK;  // Disable timer 3.
+  timer_flag = 1;
+  LedOn(5);
+  command_queue_ptr->pop_required = 1;
+  // Clear the interrupt flag.
+  PIT_TFLG3 |= PIT_TFLG_TIF_MASK;
+}
+
 void PORTC_IRQHandler() {
-  if ((PORTC_ISFR & (1 << 6)) == 0) {
-    return;
-  }
+  if ((PORTC_ISFR & (1 << 6)) == 0) return;
   
   edges_since_send ++;
   LedToggle(1);
@@ -202,4 +225,19 @@ void PORTC_IRQHandler() {
   
   // Clear interrupt flag.
   PORTC_ISFR = 1 << 6;
+}
+
+void PORTD_IRQHandler() {
+  if ((PORTD_ISFR & (1 << 3)) == 0) return;
+  LedToggle(4);
+  if (timer_flag == 1) {
+    timer_flag = 0;
+    LedOff(5);
+    //command_queue_ptr->pop_required = 1;
+    PIT_TCTRL3 &= ~PIT_TCTRL_TEN_MASK;  // Disable timer 3.
+    PIT_LDVAL3 = cs_holdout;  // Setup timer 3 ~10ms.
+    PIT_TCTRL3 |= PIT_TCTRL_TEN_MASK;  // Start Timer 3.
+  }
+  // Clear interrupt flag.
+  PORTD_ISFR = 1 << 3;
 }

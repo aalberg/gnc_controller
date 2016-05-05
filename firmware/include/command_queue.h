@@ -35,7 +35,7 @@ typedef struct {
   int size;
   ControllerState arr[QUEUE_SIZE];
   uint8 pop_removes_items;
-  uint8 pop_parity;
+  volatile uint8 pop_required;
 } CommandQueue;
 
 void InitCommandQueue(CommandQueue* queue);

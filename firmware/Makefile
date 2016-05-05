@@ -6,7 +6,7 @@
 # building the project
 #
 
-PROJECT = scope-teensy
+PROJECT = gnc_controller
 
 # Project Structure
 SRCDIR = src
